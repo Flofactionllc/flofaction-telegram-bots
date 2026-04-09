@@ -1,0 +1,59 @@
+# Render deployment configuration for Flo Faction Telegram Bot Handler
+# Deploys 18 Telegram bots as a single service
+
+services:
+  - type: web
+    name: flofaction-bots
+    runtime: node
+    plan: starter  # Free tier compatible
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: PORT
+        value: 3000
+      
+      # Bot tokens - These MUST be set in Render dashboard as environment variables
+      # DO NOT put actual tokens here for security
+      - key: QUANTUM_CLAW_TOKEN
+        sync: false
+      - key: ZERO_CLAW_TOKEN
+        sync: false
+      - key: GIGA_CLAW_TOKEN
+        sync: false
+      - key: FLOFACTION_GRANT_TOKEN
+        sync: false
+      - key: TERRA_CLAW_TOKEN
+        sync: false
+      - key: FLOFACTION_HACKATHON_TOKEN
+        sync: false
+      - key: ULTRA_CLAW_TOKEN
+        sync: false
+      - key: ALPHA_CLAW_TOKEN
+        sync: false
+      - key: NINJA_CLAW_TOKEN
+        sync: false
+      - key: NEMO_CLAW_TOKEN
+        sync: false
+      - key: DOJO_CLAW_TOKEN
+        sync: false
+      - key: MEGA_CLAW_TOKEN
+        sync: false
+      - key: OPEN_CLAW_TOKEN
+        sync: false
+      - key: NANO_CLAW_TOKEN
+        sync: false
+      - key: NANO_CLAW_IOS_TOKEN
+        sync: false
+      - key: MICRO_CLAW_TOKEN
+        sync: false
+      - key: OMEGA_CLAW_TOKEN
+        sync: false
+      - key: FLOFACTION_OPEN_CLAW_TOKEN
+        sync: false
+    
+    healthCheckPath: /health
+    autoDeploy: true
