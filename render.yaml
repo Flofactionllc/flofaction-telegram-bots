@@ -1,11 +1,11 @@
-# Render deployment configuration for Flo Faction Telegram Bot Handler
-# Deploys 18 Telegram bots as a single service
+# Render deployment configuration for Flo Faction Telegram Bot Handler v2.0
+# Deploys 20 Telegram bots with AI/LLM integration
 
 services:
   - type: web
     name: flofaction-bots
     runtime: node
-    plan: starter  # Free tier compatible
+    plan: free
     buildCommand: npm install
     startCommand: npm start
     envVars:
@@ -13,11 +13,18 @@ services:
         value: production
       - key: LOG_LEVEL
         value: info
-      - key: PORT
-        value: 3000
-      
-      # Bot tokens - These MUST be set in Render dashboard as environment variables
-      # DO NOT put actual tokens here for security
+      # LLM Configuration
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_BASE_URL
+        sync: false
+      - key: OPENAI_MODEL
+        sync: false
+      # Bot tokens - 20 bots
+      - key: CLAUDETTE_TOKEN
+        sync: false
       - key: QUANTUM_CLAW_TOKEN
         sync: false
       - key: ZERO_CLAW_TOKEN
@@ -53,6 +60,10 @@ services:
       - key: OMEGA_CLAW_TOKEN
         sync: false
       - key: FLOFACTION_OPEN_CLAW_TOKEN
+        sync: false
+      - key: TAX_CLAW_TOKEN
+        sync: false
+      - key: LEX_CLAW_TOKEN
         sync: false
     
     healthCheckPath: /health

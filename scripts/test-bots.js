@@ -1,6 +1,6 @@
 /**
  * Flo Faction Bot Test Script
- * Tests connectivity for all 18 bots
+ * Tests connectivity for all 20 bots
  * 
  * Usage: npm test
  * Or: node scripts/test-bots.js
@@ -10,6 +10,7 @@ require('dotenv').config();
 const axios = require('axios');
 
 const BOTS = [
+  { id: 'claudette', name: 'Claudette', role: 'Core AI orchestrator', token: process.env.CLAUDETTE_TOKEN },
   { id: 'quantum', name: 'QuantumClaw', role: 'Lead orchestrator', token: process.env.QUANTUM_CLAW_TOKEN },
   { id: 'zero', name: 'ZeroClaw', role: 'System monitor', token: process.env.ZERO_CLAW_TOKEN },
   { id: 'gigaclaw', name: 'GigaClaw', role: 'Content generation', token: process.env.GIGA_CLAW_TOKEN },
@@ -27,7 +28,9 @@ const BOTS = [
   { id: 'nanoclawios', name: 'NanoClawios', role: 'iOS automation', token: process.env.NANO_CLAW_IOS_TOKEN },
   { id: 'microclaw', name: 'MicroClaw', role: 'API manager', token: process.env.MICRO_CLAW_TOKEN },
   { id: 'omega', name: 'OmegaClaw', role: 'Backup/DR', token: process.env.OMEGA_CLAW_TOKEN },
-  { id: 'flofactionopenclaw', name: 'FloFactionOpenClaw', role: 'OSS manager', token: process.env.FLOFACTION_OPEN_CLAW_TOKEN }
+  { id: 'flofactionopenclaw', name: 'FloFactionOpenClaw', role: 'OSS manager', token: process.env.FLOFACTION_OPEN_CLAW_TOKEN },
+  { id: 'taxclaw', name: 'TaxClaw', role: 'Tax & compliance', token: process.env.TAX_CLAW_TOKEN },
+  { id: 'lexclaw', name: 'LexClaw', role: 'Legal research', token: process.env.LEX_CLAW_TOKEN }
 ];
 
 console.log('🧪 Flo Faction Bot Connectivity Test');
@@ -95,7 +98,7 @@ async function main() {
   
   console.log(`Summary: ${online} online | ${noToken} no token | ${errors} errors`);
   
-  if (online === 18) {
+  if (online === 20) {
     console.log('✅ All bots connected successfully!');
     process.exit(0);
   } else if (errors > 0) {

@@ -1,6 +1,6 @@
 /**
  * Flo Faction Bot Webhook Setup Script
- * Registers webhooks for all 18 bots with Telegram
+ * Registers webhooks for all 20 bots with Telegram
  * 
  * Usage: npm run setup-webhooks
  * Or: node scripts/setup-webhooks.js
@@ -19,6 +19,7 @@ if (!BASE_URL) {
 
 // Bot configuration
 const BOTS = [
+  { id: 'claudette', name: 'Claudette', token: process.env.CLAUDETTE_TOKEN },
   { id: 'quantum', name: 'QuantumClaw', token: process.env.QUANTUM_CLAW_TOKEN },
   { id: 'zero', name: 'ZeroClaw', token: process.env.ZERO_CLAW_TOKEN },
   { id: 'gigaclaw', name: 'GigaClaw', token: process.env.GIGA_CLAW_TOKEN },
@@ -36,7 +37,9 @@ const BOTS = [
   { id: 'nanoclawios', name: 'NanoClawios', token: process.env.NANO_CLAW_IOS_TOKEN },
   { id: 'microclaw', name: 'MicroClaw', token: process.env.MICRO_CLAW_TOKEN },
   { id: 'omega', name: 'OmegaClaw', token: process.env.OMEGA_CLAW_TOKEN },
-  { id: 'flofactionopenclaw', name: 'FloFactionOpenClaw', token: process.env.FLOFACTION_OPEN_CLAW_TOKEN }
+  { id: 'flofactionopenclaw', name: 'FloFactionOpenClaw', token: process.env.FLOFACTION_OPEN_CLAW_TOKEN },
+  { id: 'taxclaw', name: 'TaxClaw', token: process.env.TAX_CLAW_TOKEN },
+  { id: 'lexclaw', name: 'LexClaw', token: process.env.LEX_CLAW_TOKEN }
 ];
 
 console.log('🤖 Flo Faction Bot Webhook Setup');

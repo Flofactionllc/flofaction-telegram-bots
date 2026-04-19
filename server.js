@@ -1,8 +1,10 @@
 /**
- * Flo Faction Telegram Bot Handler
- * Express server managing 18 Telegram bots on Render
+ * Flo Faction Telegram Bot Handler v2.0
+ * Express server managing 20 Telegram bots with AI/LLM integration
+ * Deployed on Render with webhook-based architecture
  * 
- * Bots:
+ * Bots (20 total):
+ * - Claudette: Core AI orchestrator (renamed from FLOFACTIONBOT)
  * - QuantumClaw: Lead orchestrator / task router
  * - ZeroClaw: System monitor / health checker
  * - GigaClaw: Content generation / marketing
@@ -20,7 +22,8 @@
  * - NanoClawios: iOS/mobile automation
  * - MicroClaw: API integration manager
  * - OmegaClaw: Backup / disaster recovery
- * - FloFactionOpenClaw: Open source project manager
+ * - TaxClaw: Tax preparation / financial compliance
+ * - LexClaw: Legal research / policy compliance
  */
 
 require('dotenv').config();
@@ -45,8 +48,195 @@ const logger = winston.createLogger({
   ]
 });
 
-// Bot configuration with roles and descriptions
+// ============================================================
+// LLM Integration - Free Tier Providers with Failover
+// ============================================================
+const LLM_CONFIG = {
+  providers: [
+    {
+      name: 'groq',
+      baseUrl: 'https://api.groq.com/openai/v1/chat/completions',
+      apiKey: process.env.GROQ_API_KEY,
+      model: 'llama-3.3-70b-versatile',
+      maxTokens: 4096,
+      contextWindow: 32768
+    },
+    {
+      name: 'openai-compatible',
+      baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1/chat/completions',
+      apiKey: process.env.OPENAI_API_KEY,
+      model: process.env.OPENAI_MODEL || 'gpt-4.1-nano',
+      maxTokens: 4096,
+      contextWindow: 128000
+    }
+  ],
+  compaction: {
+    reserveTokensFloor: 6000,
+    maxConversationTokens: 24000,
+    compactAfterMessages: 20
+  }
+};
+
+// Conversation memory store (per chat per bot)
+const conversationMemory = new Map();
+
+function getConversationKey(botId, chatId) {
+  return `${botId}:${chatId}`;
+}
+
+function getConversation(botId, chatId) {
+  const key = getConversationKey(botId, chatId);
+  if (!conversationMemory.has(key)) {
+    conversationMemory.set(key, {
+      messages: [],
+      tokenEstimate: 0,
+      lastActive: Date.now()
+    });
+  }
+  return conversationMemory.get(key);
+}
+
+function addToConversation(botId, chatId, role, content) {
+  const conv = getConversation(botId, chatId);
+  const tokenEstimate = Math.ceil(content.length / 4); // rough estimate
+  
+  conv.messages.push({ role, content });
+  conv.tokenEstimate += tokenEstimate;
+  conv.lastActive = Date.now();
+  
+  // Compact if too long
+  if (conv.tokenEstimate > LLM_CONFIG.compaction.maxConversationTokens || 
+      conv.messages.length > LLM_CONFIG.compaction.compactAfterMessages) {
+    compactConversation(botId, chatId);
+  }
+  
+  return conv;
+}
+
+function compactConversation(botId, chatId) {
+  const conv = getConversation(botId, chatId);
+  if (conv.messages.length <= 4) return;
+  
+  // Keep system message + last 6 messages
+  const systemMsg = conv.messages.find(m => m.role === 'system');
+  const recentMessages = conv.messages.slice(-6);
+  
+  conv.messages = systemMsg ? [systemMsg, ...recentMessages] : recentMessages;
+  conv.tokenEstimate = conv.messages.reduce((sum, m) => sum + Math.ceil(m.content.length / 4), 0);
+  
+  logger.info(`Compacted conversation for ${botId}:${chatId} - ${conv.messages.length} messages, ~${conv.tokenEstimate} tokens`);
+}
+
+function resetConversation(botId, chatId) {
+  const key = getConversationKey(botId, chatId);
+  conversationMemory.delete(key);
+}
+
+// Clean up old conversations every 30 minutes
+setInterval(() => {
+  const cutoff = Date.now() - (60 * 60 * 1000); // 1 hour
+  for (const [key, conv] of conversationMemory) {
+    if (conv.lastActive < cutoff) {
+      conversationMemory.delete(key);
+    }
+  }
+}, 30 * 60 * 1000);
+
+async function callLLM(messages, botConfig) {
+  const errors = [];
+  
+  for (const provider of LLM_CONFIG.providers) {
+    if (!provider.apiKey) continue;
+    
+    try {
+      const response = await fetch(provider.baseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${provider.apiKey}`
+        },
+        body: JSON.stringify({
+          model: provider.model,
+          messages: messages,
+          max_tokens: provider.maxTokens,
+          temperature: 0.7,
+          top_p: 0.9
+        })
+      });
+      
+      if (!response.ok) {
+        const errBody = await response.text();
+        throw new Error(`HTTP ${response.status}: ${errBody}`);
+      }
+      
+      const data = await response.json();
+      const content = data.choices?.[0]?.message?.content;
+      
+      if (!content) throw new Error('Empty response from LLM');
+      
+      logger.info(`LLM response via ${provider.name} (${provider.model})`);
+      return { content, provider: provider.name, model: provider.model };
+      
+    } catch (err) {
+      errors.push(`${provider.name}: ${err.message}`);
+      logger.warn(`LLM provider ${provider.name} failed: ${err.message}`);
+    }
+  }
+  
+  throw new Error(`All LLM providers failed. Errors: ${errors.join(' | ')}`);
+}
+
+function getSystemPrompt(botConfig) {
+  return `You are ${botConfig.name}, an AI-powered bot in the Flo Faction network. 
+Your specific role: ${botConfig.role}
+Your description: ${botConfig.description}
+Your capabilities: ${botConfig.features.join(', ')}
+
+You are part of a 20-bot fleet managed by Flo Faction LLC. You should:
+- Stay in character for your assigned role
+- Be helpful, professional, and knowledgeable
+- Provide actionable information related to your specialty
+- Direct users to other bots in the network when their question falls outside your expertise
+- Keep responses concise but thorough (under 2000 characters for Telegram)
+
+The Flo Faction bot network includes:
+- Claudette: Core AI orchestrator
+- QuantumClaw: Task routing & coordination
+- ZeroClaw: System monitoring
+- GigaClaw: Content & marketing
+- FloFactionGrant: Grant research
+- TerraClaw: Real estate
+- UltraClaw: Insurance
+- AlphaClaw: Financial analysis
+- NinjaClaw: Security
+- NemoClaw: Music & sync licensing
+- DojoClaw: Training
+- MegaClaw: Analytics
+- OpenClaw: General assistant
+- NanoClaw: Micro-automation
+- NanoClawios: iOS/mobile
+- MicroClaw: API integrations
+- OmegaClaw: Backup/DR
+- TaxClaw: Tax preparation & compliance
+- LexClaw: Legal research & policy
+
+Current date: ${new Date().toLocaleDateString('en-US', { timeZone: 'America/New_York' })}
+Respond helpfully and stay in your role.`;
+}
+
+// ============================================================
+// Bot Configuration - 20 Bots
+// ============================================================
 const BOT_CONFIG = {
+  claudette: {
+    name: 'Claudette',
+    token: process.env.CLAUDETTE_TOKEN,
+    role: 'Core AI orchestrator & central command',
+    description: 'Claudette - Flo Faction Core AI Orchestrator. The brain of the operation.',
+    features: ['AI orchestration', 'Task delegation', 'Cross-bot coordination', 'Strategic planning', 'Full AI conversation'],
+    color: '👑',
+    priority: 0
+  },
   quantum: {
     name: 'QuantumClaw',
     token: process.env.QUANTUM_CLAW_TOKEN,
@@ -200,14 +390,23 @@ const BOT_CONFIG = {
     color: '🔁',
     priority: 17
   },
-  flofactionopenclaw: {
-    name: 'FloFactionOpenClaw',
-    token: process.env.FLOFACTION_OPEN_CLAW_TOKEN,
-    role: 'Open source project manager',
-    description: 'FloFactionOpenClaw - Open Source Manager',
-    features: ['OSS project tracking', 'Contributor management', 'Release monitoring', 'Community engagement'],
-    color: '🌐',
+  taxclaw: {
+    name: 'TaxClaw',
+    token: process.env.TAX_CLAW_TOKEN,
+    role: 'Tax preparation / financial compliance',
+    description: 'TaxClaw - Tax & Financial Compliance',
+    features: ['Tax preparation guidance', 'Deduction optimization', 'Filing assistance', 'Compliance checks', 'Schedule C expertise'],
+    color: '🧾',
     priority: 18
+  },
+  lexclaw: {
+    name: 'LexClaw',
+    token: process.env.LEX_CLAW_TOKEN,
+    role: 'Legal research / policy compliance',
+    description: 'LexClaw - Legal Research & Policy',
+    features: ['Legal research', 'Policy analysis', 'Compliance guidance', 'Contract review', 'Regulatory updates'],
+    color: '⚖️',
+    priority: 19
   }
 };
 
@@ -224,8 +423,8 @@ app.use(express.urlencoded({ extended: true }));
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 200,
   message: 'Too many requests from this IP, please try again later.'
 });
 app.use('/webhook/', limiter);
@@ -243,13 +442,16 @@ app.get('/health', (req, res) => {
     };
   }).sort((a, b) => a.priority - b.priority);
 
-  const healthy = botStatus.every(b => b.configured);
+  const configuredCount = botStatus.filter(b => b.configured).length;
+  const healthy = configuredCount >= 18; // Allow partial deployment
   
   res.status(healthy ? 200 : 503).json({
     status: healthy ? 'healthy' : 'degraded',
     timestamp: new Date().toISOString(),
     totalBots: Object.keys(BOT_CONFIG).length,
-    configuredBots: botStatus.filter(b => b.configured).length,
+    configuredBots: configuredCount,
+    llmProviders: LLM_CONFIG.providers.filter(p => p.apiKey).map(p => p.name),
+    conversationsActive: conversationMemory.size,
     bots: botStatus,
     uptime: process.uptime()
   });
@@ -258,19 +460,20 @@ app.get('/health', (req, res) => {
 // Root endpoint
 app.get('/', (req, res) => {
   res.json({
-    name: 'Flo Faction Telegram Bot Handler',
-    version: '1.0.0',
+    name: 'Flo Faction Telegram Bot Handler v2.0',
+    version: '2.0.0',
+    features: ['20 bots', 'AI/LLM integration', 'Conversation memory', 'Auto-compaction', 'Provider failover'],
     bots: Object.values(BOT_CONFIG).map(b => ({
       name: b.name,
       role: b.role,
-      webhook: `/webhook/${Object.keys(BOT_CONFIG).find(k => BOT_CONFIG[k].name === b.name)}`
+      emoji: b.color
     })),
     endpoints: {
       health: '/health',
       webhooks: '/webhook/:botId',
-      botStatus: '/bot-status'
-    },
-    documentation: 'https://github.com/flofaction/bots'
+      botStatus: '/bot-status',
+      networkStatus: '/network-status'
+    }
   });
 });
 
@@ -278,11 +481,34 @@ app.get('/', (req, res) => {
 app.get('/bot-status', (req, res) => {
   const status = Object.entries(BOT_CONFIG).map(([key, config]) => ({
     id: key,
-    ...config,
+    name: config.name,
+    role: config.role,
+    priority: config.priority,
+    emoji: config.color,
+    features: config.features,
     token: config.token ? '✓ Configured' : '✗ Missing',
     webhookUrl: `${BASE_URL}/webhook/${key}`
   }));
-  res.json({ bots: status });
+  res.json({ totalBots: status.length, bots: status });
+});
+
+// Network status - shows inter-bot communication status
+app.get('/network-status', (req, res) => {
+  const activeBots = Object.entries(BOT_CONFIG).filter(([, c]) => c.token).length;
+  res.json({
+    network: 'Flo Faction Bot Network v2.0',
+    activeBots,
+    totalBots: Object.keys(BOT_CONFIG).length,
+    activeConversations: conversationMemory.size,
+    llmStatus: LLM_CONFIG.providers.map(p => ({
+      name: p.name,
+      model: p.model,
+      configured: !!p.apiKey,
+      contextWindow: p.contextWindow
+    })),
+    compactionSettings: LLM_CONFIG.compaction,
+    uptime: formatUptime(process.uptime())
+  });
 });
 
 // Store bot instances
@@ -299,49 +525,54 @@ Object.entries(BOT_CONFIG).forEach(([botId, config]) => {
   const bot = new TelegramBot(config.token, { webHook: true });
   botInstances[botId] = bot;
 
-  // Welcome message handler
+  // /start handler
   bot.onText(/\/start/, (msg) => {
     const chatId = msg.chat.id;
     const username = msg.from.username || msg.from.first_name;
     
     logger.info(`[${config.name}] /start from ${username} (${chatId})`);
+    resetConversation(botId, chatId);
     
     const welcomeMessage = `
-${config.color} <b>${config.name}</b> ${config.color}
+${config.color} <b>Welcome to ${config.name}!</b> ${config.color}
 
-<b>${config.role}</b>
+Hey ${username}! I'm <b>${config.name}</b>, part of the Flo Faction AI Bot Network.
 
-${config.description}
+<b>My Role:</b> ${config.role}
 
-<b>Available Commands:</b>
-/start - Show this welcome message
-/status - Check system status
-/help - List all commands
-/info - About this bot
+<b>What I Can Do:</b>
+${config.features.map(f => `✓ ${f}`).join('\n')}
 
-<b>Features:</b>
-${config.features.map(f => `• ${f}`).join('\n')}
+<b>💡 Just send me a message</b> and I'll use AI to help you with anything related to my specialty!
 
-<i>Flo Faction Bot #${config.priority}/18</i>
+<b>Commands:</b>
+/help - All commands
+/status - System status
+/info - About me
+/reset - Start fresh conversation
+/network - See all bots
+
+<i>Flo Faction - Infinite Possibilities 🚀</i>
     `;
     
     bot.sendMessage(chatId, welcomeMessage, { parse_mode: 'HTML' });
   });
 
-  // Status handler
+  // /status handler
   bot.onText(/\/status/, (msg) => {
     const chatId = msg.chat.id;
-    const username = msg.from.username || msg.from.first_name;
-    
-    logger.info(`[${config.name}] /status from ${username} (${chatId})`);
+    const conv = getConversation(botId, chatId);
     
     const statusMessage = `
 ${config.color} <b>${config.name} Status</b> ${config.color}
 
 <b>Bot Health:</b> ✅ Operational
+<b>AI Engine:</b> ${LLM_CONFIG.providers.filter(p => p.apiKey).length > 0 ? '✅ Connected' : '⚠️ No providers'}
 <b>Uptime:</b> ${formatUptime(process.uptime())}
-<b>Webhook:</b> ${BASE_URL}/webhook/${botId}
-<b>Connected:</b> ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} EST
+<b>Your Conversation:</b> ${conv.messages.length} messages (~${conv.tokenEstimate} tokens)
+<b>Active Conversations:</b> ${conversationMemory.size}
+<b>Network Bots:</b> ${Object.keys(botInstances).length}/20 online
+<b>Time:</b> ${new Date().toLocaleString('en-US', { timeZone: 'America/New_York' })} EST
 
 <i>All systems operational</i>
     `;
@@ -349,37 +580,36 @@ ${config.color} <b>${config.name} Status</b> ${config.color}
     bot.sendMessage(chatId, statusMessage, { parse_mode: 'HTML' });
   });
 
-  // Help handler
+  // /help handler
   bot.onText(/\/help/, (msg) => {
     const chatId = msg.chat.id;
-    const username = msg.from.username || msg.from.first_name;
-    
-    logger.info(`[${config.name}] /help from ${username} (${chatId})`);
     
     const helpMessage = `
 ${config.color} <b>${config.name} Commands</b> ${config.color}
 
 <b>Core Commands:</b>
-/start - Welcome message & bot info
-/status - System health & status
+/start - Welcome & introduction
+/status - System health & AI status
 /help - This help message
 /info - Detailed bot information
+/reset - Clear conversation & start fresh
+/network - View all bots in the network
 
-<b>Feature Commands:</b>
-${config.features.map((f, i) => `/${f.toLowerCase().replace(/[^a-z]/g, '')} - ${f}`).join('\n')}
+<b>AI Features:</b>
+💬 Just type any message to chat with AI
+🧠 I remember our conversation context
+🔄 Use /reset if context gets too long
 
-<b>Special Commands:</b>
-/quantum - Contact QuantumClaw (Lead)
-/alert - Send alert to ZeroClaw
-/sync - Sync with all bots
+<b>My Specialties:</b>
+${config.features.map((f, i) => `${i + 1}. ${f}`).join('\n')}
 
-<i>Type any command to begin</i>
+<i>Type any message to begin!</i>
     `;
     
     bot.sendMessage(chatId, helpMessage, { parse_mode: 'HTML' });
   });
 
-  // Info handler
+  // /info handler
   bot.onText(/\/info/, (msg) => {
     const chatId = msg.chat.id;
     
@@ -388,7 +618,8 @@ ${config.color} <b>About ${config.name}</b> ${config.color}
 
 <b>Role:</b> ${config.role}
 <b>Priority:</b> #${config.priority}
-<b>Part of:</b> Flo Faction Bot Network
+<b>Part of:</b> Flo Faction Bot Network v2.0
+<b>AI Powered:</b> Yes (Multi-provider LLM)
 
 <b>Description:</b>
 ${config.description}
@@ -397,7 +628,7 @@ ${config.description}
 ${config.features.map(f => `✓ ${f}`).join('\n')}
 
 <b>Network:</b>
-18 bots | Unified Command | Distributed Processing
+20 bots | AI-Powered | Unified Command | Distributed Processing
 
 <i>Flo Faction - Infinite Possibilities</i>
     `;
@@ -405,35 +636,109 @@ ${config.features.map(f => `✓ ${f}`).join('\n')}
     bot.sendMessage(chatId, infoMessage, { parse_mode: 'HTML' });
   });
 
-  // Quantum command - routes to QuantumClaw
-  bot.onText(/\/quantum/, (msg) => {
-    if (botId === 'quantum') {
-      bot.sendMessage(msg.chat.id, `⚛️ <b>QuantumClaw Lead Mode</b>\n\nReady to orchestrate tasks across the Flo Faction bot network.\n\nUse /delegate to assign tasks to other bots.`, { parse_mode: 'HTML' });
-    } else {
-      bot.sendMessage(msg.chat.id, `🔗 <b>Connecting to QuantumClaw...</b>\n\nUse @QuantumClaw_FloBot for orchestration.`, { parse_mode: 'HTML' });
+  // /reset handler
+  bot.onText(/\/reset/, (msg) => {
+    const chatId = msg.chat.id;
+    resetConversation(botId, chatId);
+    bot.sendMessage(chatId, `🔄 <b>Conversation Reset</b>\n\nFresh start! Your conversation history has been cleared.\nSend me a message to begin a new conversation.`, { parse_mode: 'HTML' });
+  });
+
+  // /network handler
+  bot.onText(/\/network/, (msg) => {
+    const chatId = msg.chat.id;
+    
+    const onlineBots = Object.entries(BOT_CONFIG)
+      .filter(([, c]) => c.token)
+      .sort((a, b) => a[1].priority - b[1].priority)
+      .map(([, c]) => `${c.color} <b>${c.name}</b> - ${c.role}`)
+      .join('\n');
+    
+    const networkMessage = `
+🌐 <b>Flo Faction Bot Network</b> 🌐
+
+<b>Online Bots (${Object.keys(botInstances).length}/20):</b>
+
+${onlineBots}
+
+<i>All bots are AI-powered and ready to assist!</i>
+    `;
+    
+    bot.sendMessage(chatId, networkMessage, { parse_mode: 'HTML' });
+  });
+
+  // AI-powered message handler for non-command messages
+  bot.on('message', async (msg) => {
+    if (!msg.text || msg.text.startsWith('/')) return;
+    
+    const chatId = msg.chat.id;
+    const username = msg.from.username || msg.from.first_name;
+    const userMessage = msg.text;
+    
+    logger.info({
+      event: 'ai_message',
+      bot: config.name,
+      botId: botId,
+      user: username,
+      userId: msg.from.id,
+      chatId: chatId,
+      text: userMessage.substring(0, 100),
+      timestamp: new Date().toISOString()
+    });
+
+    // Send typing indicator
+    bot.sendChatAction(chatId, 'typing');
+
+    try {
+      // Build conversation with system prompt
+      const conv = getConversation(botId, chatId);
+      
+      // Add system prompt if this is a new conversation
+      if (conv.messages.length === 0) {
+        addToConversation(botId, chatId, 'system', getSystemPrompt(config));
+      }
+      
+      // Add user message
+      addToConversation(botId, chatId, 'user', userMessage);
+      
+      // Call LLM
+      const response = await callLLM(conv.messages, config);
+      
+      // Add assistant response to memory
+      addToConversation(botId, chatId, 'assistant', response.content);
+      
+      // Send response (split if too long for Telegram)
+      const maxLen = 4000;
+      if (response.content.length > maxLen) {
+        const parts = response.content.match(new RegExp(`.{1,${maxLen}}`, 'gs'));
+        for (const part of parts) {
+          await bot.sendMessage(chatId, part);
+        }
+      } else {
+        await bot.sendMessage(chatId, response.content);
+      }
+      
+    } catch (err) {
+      logger.error({
+        event: 'ai_error',
+        bot: config.name,
+        error: err.message,
+        timestamp: new Date().toISOString()
+      });
+      
+      bot.sendMessage(chatId, 
+        `⚠️ <b>AI Temporarily Unavailable</b>\n\n` +
+        `I'm having trouble connecting to my AI brain right now.\n\n` +
+        `<b>What you can do:</b>\n` +
+        `• Try again in a moment\n` +
+        `• Use /reset to start a fresh conversation\n` +
+        `• Use /help to see available commands\n\n` +
+        `<i>Error: ${err.message.substring(0, 200)}</i>`,
+        { parse_mode: 'HTML' }
+      );
     }
   });
 
-  // Log all messages
-  bot.on('message', (msg) => {
-    if (!msg.text || msg.text.startsWith('/')) return;
-    
-    logger.info({
-      event: 'message',
-      bot: config.name,
-      botId: botId,
-      user: msg.from.username || msg.from.first_name,
-      userId: msg.from.id,
-      chatId: msg.chat.id,
-      text: msg.text,
-      timestamp: new Date().toISOString()
-    });
-    
-    // Auto-reply for non-command messages
-    bot.sendMessage(msg.chat.id, `🤖 I received your message!\n\nFor full functionality, use:\n/start - Introduction\n/help - All commands\n/status - System status\n\n<i>${config.name} at your service</i>`, { parse_mode: 'HTML' });
-  });
-
-  logger.info(`Initialized bot: ${config.name} (${botId})`);
+  logger.info(`✅ Initialized bot: ${config.name} (${botId}) - ${config.role}`);
 });
 
 // Webhook endpoint handler
@@ -446,14 +751,6 @@ app.post('/webhook/:botId', (req, res) => {
     return res.status(404).json({ error: 'Bot not found' });
   }
   
-  // Log webhook receipt
-  logger.debug({
-    event: 'webhook_received',
-    botId: botId,
-    timestamp: new Date().toISOString()
-  });
-  
-  // Process webhook update
   bot.processUpdate(req.body);
   res.sendStatus(200);
 });
@@ -480,17 +777,24 @@ app.use((err, req, res, next) => {
   res.status(500).json({ error: 'Internal server error' });
 });
 
+// Create logs directory
+const fs = require('fs');
+if (!fs.existsSync('logs')) {
+  fs.mkdirSync('logs', { recursive: true });
+}
+
 // Start server
 app.listen(PORT, () => {
   logger.info(`========================================`);
-  logger.info(`Flo Faction Bot Handler Started`);
+  logger.info(`Flo Faction Bot Handler v2.0 Started`);
   logger.info(`Port: ${PORT}`);
   logger.info(`Base URL: ${BASE_URL}`);
+  logger.info(`LLM Providers: ${LLM_CONFIG.providers.filter(p => p.apiKey).map(p => `${p.name}(${p.model})`).join(', ') || 'NONE'}`);
   logger.info(`========================================`);
-  logger.info(`Bots initialized: ${Object.keys(botInstances).length}/18`);
+  logger.info(`Bots initialized: ${Object.keys(botInstances).length}/20`);
   Object.entries(botInstances).forEach(([id, bot]) => {
     const config = BOT_CONFIG[id];
-    logger.info(`  ✓ ${config.name} (#${config.priority}) - ${config.role}`);
+    logger.info(`  ✓ ${config.color} ${config.name} (#${config.priority}) - ${config.role}`);
   });
   logger.info(`========================================`);
 });
