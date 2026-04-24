@@ -521,8 +521,8 @@ Object.entries(BOT_CONFIG).forEach(([botId, config]) => {
     return;
   }
 
-  // Create bot instance in webhook mode
-  const bot = new TelegramBot(config.token, { webHook: true });
+  // Create bot instance - no built-in webhook server (we use Express to receive updates)
+  const bot = new TelegramBot(config.token, { webHook: false });
   botInstances[botId] = bot;
 
   // /start handler
