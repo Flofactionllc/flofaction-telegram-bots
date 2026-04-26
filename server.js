@@ -49,23 +49,56 @@ const logger = winston.createLogger({
 });
 
 // ============================================================
-// LLM Integration - Free Tier Providers with Failover
+// LLM Integration - Best Free Providers (NO Llama/Ollama/OpenRouter/Anthropic)
 // ============================================================
 const LLM_CONFIG = {
   providers: [
     {
-      name: 'groq',
-      baseUrl: 'https://api.groq.com/openai/v1/chat/completions',
-      apiKey: process.env.GROQ_API_KEY,
-      model: 'llama-3.3-70b-versatile',
-      maxTokens: 4096,
-      contextWindow: 32768
+      name: 'gemini-pro',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      apiKey: process.env.GOOGLE_API_KEY,
+      model: 'gemini-2.5-flash',
+      maxTokens: 8192,
+      contextWindow: 1000000
     },
     {
-      name: 'openai-compatible',
-      baseUrl: process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1/chat/completions',
+      name: 'sambanova',
+      baseUrl: 'https://api.sambanova.ai/v1/chat/completions',
+      apiKey: process.env.SAMBANOVA_API_KEY,
+      model: 'Meta-Llama-3.3-70B-Instruct',
+      maxTokens: 4096,
+      contextWindow: 131072
+    },
+    {
+      name: 'qwen-dashscope',
+      baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
+      apiKey: process.env.QWEN_API_KEY,
+      model: 'qwen-plus',
+      maxTokens: 4096,
+      contextWindow: 131072
+    },
+    {
+      name: 'minimax',
+      baseUrl: 'https://api.minimax.chat/v1/text/chatcompletion_v2',
+      apiKey: process.env.MINIMAX_API_KEY,
+      model: 'MiniMax-Text-01',
+      maxTokens: 4096,
+      contextWindow: 1000000,
+      groupId: process.env.MINIMAX_GROUP_ID
+    },
+    {
+      name: 'kimi-moonshot',
+      baseUrl: 'https://api.moonshot.cn/v1/chat/completions',
+      apiKey: process.env.KIMI_API_KEY,
+      model: 'moonshot-v1-8k',
+      maxTokens: 4096,
+      contextWindow: 8192
+    },
+    {
+      name: 'openai',
+      baseUrl: 'https://api.openai.com/v1/chat/completions',
       apiKey: process.env.OPENAI_API_KEY,
-      model: process.env.OPENAI_MODEL || 'gpt-4.1-nano',
+      model: 'gpt-4.1-nano',
       maxTokens: 4096,
       contextWindow: 128000
     }
@@ -76,6 +109,62 @@ const LLM_CONFIG = {
     compactAfterMessages: 20
   }
 };
+
+// ============================================================
+// Email/SMS via Gmail SMTP (Nodemailer)
+// ============================================================
+const nodemailer = require('nodemailer');
+
+const EMAIL_ACCOUNTS = {
+  primary: {
+    user: 'flofactionllc@gmail.com',
+    pass: process.env.GMAIL_APP_PASSWORD_PRIMARY || 'wjzd aojw qhbt runw',
+    name: 'Flo Faction LLC'
+  },
+  personal: {
+    user: 'edwardspaul167@gmail.com',
+    pass: process.env.GMAIL_APP_PASSWORD_PERSONAL || 'zivr ktby blwl yuwa',
+    name: 'Paul Edwards'
+  },
+  insurance: {
+    user: 'flofaction.insurance@gmail.com',
+    pass: process.env.GMAIL_APP_PASSWORD_INSURANCE || 'nuio kske xhaf dihi',
+    name: 'Flo Faction Insurance'
+  },
+  business: {
+    user: 'flofaction.business@gmail.com',
+    pass: process.env.GMAIL_APP_PASSWORD_BUSINESS || 'ryki ftcc juqx xqvr',
+    name: 'Flo Faction Business'
+  }
+};
+
+function createEmailTransporter(account) {
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: { user: account.user, pass: account.pass.replace(/\s/g, '') }
+  });
+}
+
+async function sendEmail(to, subject, body, fromAccount = 'primary') {
+  const account = EMAIL_ACCOUNTS[fromAccount] || EMAIL_ACCOUNTS.primary;
+  const transporter = createEmailTransporter(account);
+  return transporter.sendMail({
+    from: `"${account.name}" <${account.user}>`,
+    to, subject, html: body
+  });
+}
+
+// SMS via Google Voice email gateway (sends to carrier email-to-SMS)
+const CARRIER_GATEWAYS = {
+  tmobile: 'tmomail.net', metropcs: 'mymetropcs.com', att: 'txt.att.net',
+  verizon: 'vtext.com', sprint: 'messaging.sprintpcs.com', boost: 'sms.myboostmobile.com'
+};
+
+async function sendSMS(phoneNumber, message, carrier = 'metropcs', fromAccount = 'primary') {
+  const gateway = CARRIER_GATEWAYS[carrier] || CARRIER_GATEWAYS.metropcs;
+  const smsEmail = `${phoneNumber}@${gateway}`;
+  return sendEmail(smsEmail, '', message, fromAccount);
+}
 
 // Conversation memory store (per chat per bot)
 const conversationMemory = new Map();
