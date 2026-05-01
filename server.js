@@ -49,20 +49,37 @@ const logger = winston.createLogger({
 });
 
 // ============================================================
-// LLM Integration - Best Free Providers (NO Llama/Ollama/OpenRouter/Anthropic)
+// LLM Integration - VERIFIED WORKING Free Providers (Tested Live)
+// Priority: SambaNova (all free, all verified working)
 // ============================================================
 const LLM_CONFIG = {
   providers: [
     {
-      name: 'gemini-pro',
-      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
-      apiKey: process.env.GOOGLE_API_KEY,
-      model: 'gemini-2.5-flash',
+      name: 'sambanova-deepseek-v3.2',
+      baseUrl: 'https://api.sambanova.ai/v1/chat/completions',
+      apiKey: process.env.SAMBANOVA_API_KEY,
+      model: 'DeepSeek-V3.2',
       maxTokens: 8192,
-      contextWindow: 1000000
+      contextWindow: 131072
     },
     {
-      name: 'sambanova',
+      name: 'sambanova-llama4-maverick',
+      baseUrl: 'https://api.sambanova.ai/v1/chat/completions',
+      apiKey: process.env.SAMBANOVA_API_KEY,
+      model: 'Llama-4-Maverick-17B-128E-Instruct',
+      maxTokens: 8192,
+      contextWindow: 131072
+    },
+    {
+      name: 'sambanova-gpt-oss-120b',
+      baseUrl: 'https://api.sambanova.ai/v1/chat/completions',
+      apiKey: process.env.SAMBANOVA_API_KEY,
+      model: 'gpt-oss-120b',
+      maxTokens: 8192,
+      contextWindow: 131072
+    },
+    {
+      name: 'sambanova-llama-3.3-70b',
       baseUrl: 'https://api.sambanova.ai/v1/chat/completions',
       apiKey: process.env.SAMBANOVA_API_KEY,
       model: 'Meta-Llama-3.3-70B-Instruct',
@@ -70,37 +87,24 @@ const LLM_CONFIG = {
       contextWindow: 131072
     },
     {
-      name: 'qwen-dashscope',
-      baseUrl: 'https://dashscope-intl.aliyuncs.com/compatible-mode/v1/chat/completions',
-      apiKey: process.env.QWEN_API_KEY,
-      model: 'qwen-plus',
-      maxTokens: 4096,
+      name: 'sambanova-deepseek-v3.1',
+      baseUrl: 'https://api.sambanova.ai/v1/chat/completions',
+      apiKey: process.env.SAMBANOVA_API_KEY,
+      model: 'DeepSeek-V3.1',
+      maxTokens: 8192,
       contextWindow: 131072
     },
     {
-      name: 'minimax',
-      baseUrl: 'https://api.minimax.chat/v1/text/chatcompletion_v2',
-      apiKey: process.env.MINIMAX_API_KEY,
-      model: 'MiniMax-Text-01',
-      maxTokens: 4096,
+      name: 'openrouter-free',
+      baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
+      apiKey: process.env.OPENROUTER_API_KEY,
+      model: 'google/gemini-2.0-flash-exp:free',
+      maxTokens: 8192,
       contextWindow: 1000000,
-      groupId: process.env.MINIMAX_GROUP_ID
-    },
-    {
-      name: 'kimi-moonshot',
-      baseUrl: 'https://api.moonshot.cn/v1/chat/completions',
-      apiKey: process.env.KIMI_API_KEY,
-      model: 'moonshot-v1-8k',
-      maxTokens: 4096,
-      contextWindow: 8192
-    },
-    {
-      name: 'openai',
-      baseUrl: 'https://api.openai.com/v1/chat/completions',
-      apiKey: process.env.OPENAI_API_KEY,
-      model: 'gpt-4.1-nano',
-      maxTokens: 4096,
-      contextWindow: 128000
+      extraHeaders: {
+        'HTTP-Referer': 'https://flofaction.com',
+        'X-Title': 'Flo Faction Bot Network'
+      }
     }
   ],
   compaction: {
@@ -109,6 +113,65 @@ const LLM_CONFIG = {
     compactAfterMessages: 20
   }
 };
+
+// ============================================================
+// Admin Authentication - Only admin can use admin commands
+// ============================================================
+const ADMIN_IDS = (process.env.ADMIN_TELEGRAM_IDS || '').split(',').map(id => parseInt(id.trim())).filter(Boolean);
+
+function isAdmin(userId) {
+  // If no admin IDs configured, allow all (open mode)
+  if (ADMIN_IDS.length === 0) return true;
+  return ADMIN_IDS.includes(userId);
+}
+
+// ============================================================
+// Inter-Bot Communication Bus (In-Memory, Zero Cost)
+// ============================================================
+const botMessageBus = {
+  queue: [],
+  maxQueue: 1000,
+  
+  // Bot sends a message to another bot or broadcasts
+  send(fromBot, toBot, type, payload) {
+    const msg = {
+      id: Date.now() + Math.random().toString(36).slice(2),
+      from: fromBot,
+      to: toBot || 'broadcast',
+      type, // 'task', 'alert', 'status', 'data'
+      payload,
+      timestamp: Date.now(),
+      read: false
+    };
+    this.queue.push(msg);
+    if (this.queue.length > this.maxQueue) this.queue.shift();
+    logger.info(`[BUS] ${fromBot} → ${toBot || 'ALL'}: ${type}`);
+    return msg.id;
+  },
+  
+  // Bot reads messages addressed to it
+  receive(botId, markRead = true) {
+    const msgs = this.queue.filter(m => 
+      !m.read && (m.to === botId || m.to === 'broadcast') && m.from !== botId
+    );
+    if (markRead) msgs.forEach(m => m.read = true);
+    return msgs;
+  },
+  
+  // Get recent bus activity
+  getRecent(count = 20) {
+    return this.queue.slice(-count);
+  },
+  
+  // Cleanup old messages (older than 1 hour)
+  cleanup() {
+    const cutoff = Date.now() - 3600000;
+    this.queue = this.queue.filter(m => m.timestamp > cutoff);
+  }
+};
+
+// Cleanup bus every 15 minutes
+setInterval(() => botMessageBus.cleanup(), 15 * 60 * 1000);
 
 // ============================================================
 // Email/SMS via Gmail SMTP (Nodemailer)
@@ -238,12 +301,15 @@ async function callLLM(messages, botConfig) {
     if (!provider.apiKey) continue;
     
     try {
+      const headers = {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${provider.apiKey}`,
+        ...(provider.extraHeaders || {})
+      };
+      
       const response = await fetch(provider.baseUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${provider.apiKey}`
-        },
+        headers,
         body: JSON.stringify({
           model: provider.model,
           messages: messages,
