@@ -1,6 +1,5 @@
-# Render deployment configuration for Flo Faction Telegram Bot Handler v2.0
-# Deploys 20 Telegram bots with AI/LLM integration
-
+# Render deployment configuration for Flo Faction Telegram Bot Handler v4.0
+# Deploys 20 Telegram bots with AI/LLM (SambaNova free tier - 100% free, 24/7)
 services:
   - type: web
     name: flofaction-bots
@@ -13,14 +12,22 @@ services:
         value: production
       - key: LOG_LEVEL
         value: info
-      # LLM Configuration
-      - key: GROQ_API_KEY
+      - key: PORT
+        value: "3000"
+      # BASE_URL - set this to your Render URL after first deploy
+      # Example: https://flofaction-bots.onrender.com
+      - key: BASE_URL
         sync: false
-      - key: OPENAI_API_KEY
+      # LLM Configuration (SambaNova free tier - verified working)
+      - key: SAMBANOVA_API_KEY
         sync: false
-      - key: OPENAI_BASE_URL
+      # Gmail SMTP
+      - key: GMAIL_USER
+        value: flofactionllc@gmail.com
+      - key: GMAIL_APP_PASSWORD
         sync: false
-      - key: OPENAI_MODEL
+      # Admin User ID (your Telegram user ID for admin commands)
+      - key: ADMIN_USER_ID
         sync: false
       # Bot tokens - 20 bots
       - key: CLAUDETTE_TOKEN
@@ -59,12 +66,9 @@ services:
         sync: false
       - key: OMEGA_CLAW_TOKEN
         sync: false
-      - key: FLOFACTION_OPEN_CLAW_TOKEN
-        sync: false
       - key: TAX_CLAW_TOKEN
         sync: false
       - key: LEX_CLAW_TOKEN
         sync: false
-    
     healthCheckPath: /health
     autoDeploy: true

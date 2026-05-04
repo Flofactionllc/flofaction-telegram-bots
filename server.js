@@ -938,10 +938,93 @@ if (!fs.existsSync('logs')) {
   fs.mkdirSync('logs', { recursive: true });
 }
 
+// ============================================================
+// Auto-Webhook Registration on Startup
+// Sets webhooks for all bots when BASE_URL is a public URL (Render)
+// ============================================================
+async function setupWebhooks() {
+  if (BASE_URL.includes('localhost') || BASE_URL.includes('127.0.0.1')) {
+    logger.info('[WEBHOOKS] Running locally — using polling mode, skipping webhook setup');
+    // Start polling for local development
+    Object.entries(botInstances).forEach(([botId, bot]) => {
+      bot.startPolling();
+      logger.info(`[POLLING] ${BOT_CONFIG[botId].name} polling started`);
+    });
+    return;
+  }
+
+  logger.info(`[WEBHOOKS] Setting up webhooks for ${Object.keys(botInstances).length} bots...`);
+  const results = { success: 0, failed: 0, errors: [] };
+
+  for (const [botId, bot] of Object.entries(botInstances)) {
+    const webhookUrl = `${BASE_URL}/webhook/${botId}`;
+    try {
+      await bot.setWebHook(webhookUrl);
+      results.success++;
+      logger.info(`[WEBHOOK] ✅ ${BOT_CONFIG[botId].name} → ${webhookUrl}`);
+    } catch (err) {
+      results.failed++;
+      results.errors.push(`${BOT_CONFIG[botId].name}: ${err.message}`);
+      logger.error(`[WEBHOOK] ❌ ${BOT_CONFIG[botId].name} failed: ${err.message}`);
+    }
+    // Small delay to avoid Telegram rate limits
+    await new Promise(r => setTimeout(r, 200));
+  }
+
+  logger.info(`[WEBHOOKS] Complete: ${results.success} success, ${results.failed} failed`);
+  if (results.errors.length > 0) {
+    logger.warn(`[WEBHOOKS] Errors: ${results.errors.join(' | ')}`);
+  }
+  return results;
+}
+
+// Manual webhook setup/reset endpoint
+app.post('/setup-webhooks', async (req, res) => {
+  if (BASE_URL.includes('localhost')) {
+    return res.json({ error: 'Cannot set webhooks on localhost' });
+  }
+  const results = await setupWebhooks();
+  res.json({ message: 'Webhook setup complete', ...results });
+});
+
+// Delete all webhooks (switch to polling mode)
+app.post('/delete-webhooks', async (req, res) => {
+  const results = { success: 0, failed: 0 };
+  for (const [botId, bot] of Object.entries(botInstances)) {
+    try {
+      await bot.deleteWebHook();
+      results.success++;
+    } catch (err) {
+      results.failed++;
+    }
+    await new Promise(r => setTimeout(r, 200));
+  }
+  res.json({ message: 'All webhooks deleted — bots now in idle mode', ...results });
+});
+
+// Webhook status check
+app.get('/webhook-status', async (req, res) => {
+  const statuses = [];
+  for (const [botId, bot] of Object.entries(botInstances)) {
+    try {
+      const info = await bot.getWebHookInfo();
+      statuses.push({
+        bot: BOT_CONFIG[botId].name,
+        url: info.url || 'NOT SET',
+        pending: info.pending_update_count,
+        lastError: info.last_error_message || null
+      });
+    } catch (err) {
+      statuses.push({ bot: BOT_CONFIG[botId].name, error: err.message });
+    }
+  }
+  res.json({ totalBots: statuses.length, webhooks: statuses });
+});
+
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   logger.info(`========================================`);
-  logger.info(`Flo Faction Bot Handler v2.0 Started`);
+  logger.info(`Flo Faction Bot Handler v4.0 Started`);
   logger.info(`Port: ${PORT}`);
   logger.info(`Base URL: ${BASE_URL}`);
   logger.info(`LLM Providers: ${LLM_CONFIG.providers.filter(p => p.apiKey).map(p => `${p.name}(${p.model})`).join(', ') || 'NONE'}`);
@@ -951,6 +1034,12 @@ app.listen(PORT, () => {
     const config = BOT_CONFIG[id];
     logger.info(`  ✓ ${config.color} ${config.name} (#${config.priority}) - ${config.role}`);
   });
+  logger.info(`========================================`);
+
+  // Auto-setup webhooks (or polling if local)
+  await setupWebhooks();
+  logger.info(`========================================`);
+  logger.info(`🚀 All systems GO — Flo Faction Bot Network v4.0 LIVE`);
   logger.info(`========================================`);
 });
 
