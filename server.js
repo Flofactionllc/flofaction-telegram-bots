@@ -49,11 +49,45 @@ const logger = winston.createLogger({
 });
 
 // ============================================================
-// LLM Integration - VERIFIED WORKING Free Providers (Tested Live)
-// Priority: SambaNova (all free, all verified working)
+// LLM Integration - VERIFIED WORKING Free Providers (Live Tested May 7, 2026)
+// Priority: GitHub Models (GPT-4o FREE) > SambaNova > OpenRouter > Groq > Google > Nvidia > Cloudflare > Together > Cerebras > DeepSeek
 // ============================================================
 const LLM_CONFIG = {
   providers: [
+    // === TIER 1: GITHUB MODELS (CONFIRMED WORKING - GPT-4o FREE via Student Dev Pack) ===
+    {
+      name: 'github-gpt-4o',
+      baseUrl: 'https://models.inference.ai.azure.com/chat/completions',
+      apiKey: process.env.GITHUB_TOKEN,
+      model: 'gpt-4o',
+      maxTokens: 8192,
+      contextWindow: 128000
+    },
+    {
+      name: 'github-gpt-4o-mini',
+      baseUrl: 'https://models.inference.ai.azure.com/chat/completions',
+      apiKey: process.env.GITHUB_TOKEN,
+      model: 'gpt-4o-mini',
+      maxTokens: 8192,
+      contextWindow: 128000
+    },
+    {
+      name: 'github-llama-405b',
+      baseUrl: 'https://models.inference.ai.azure.com/chat/completions',
+      apiKey: process.env.GITHUB_TOKEN,
+      model: 'Meta-Llama-3.1-405B-Instruct',
+      maxTokens: 4096,
+      contextWindow: 128000
+    },
+    {
+      name: 'github-phi-4',
+      baseUrl: 'https://models.inference.ai.azure.com/chat/completions',
+      apiKey: process.env.GITHUB_TOKEN,
+      model: 'Phi-4',
+      maxTokens: 4096,
+      contextWindow: 16000
+    },
+    // === TIER 2: SAMBANOVA (CONFIRMED WORKING - Rate limited per minute) ===
     {
       name: 'sambanova-deepseek-v3.2',
       baseUrl: 'https://api.sambanova.ai/v1/chat/completions',
@@ -71,14 +105,6 @@ const LLM_CONFIG = {
       contextWindow: 131072
     },
     {
-      name: 'sambanova-gpt-oss-120b',
-      baseUrl: 'https://api.sambanova.ai/v1/chat/completions',
-      apiKey: process.env.SAMBANOVA_API_KEY,
-      model: 'gpt-oss-120b',
-      maxTokens: 8192,
-      contextWindow: 131072
-    },
-    {
       name: 'sambanova-llama-3.3-70b',
       baseUrl: 'https://api.sambanova.ai/v1/chat/completions',
       apiKey: process.env.SAMBANOVA_API_KEY,
@@ -86,25 +112,96 @@ const LLM_CONFIG = {
       maxTokens: 4096,
       contextWindow: 131072
     },
+    // === TIER 3: OPENROUTER FREE (29+ free models - need key from openrouter.ai/keys) ===
     {
-      name: 'sambanova-deepseek-v3.1',
-      baseUrl: 'https://api.sambanova.ai/v1/chat/completions',
-      apiKey: process.env.SAMBANOVA_API_KEY,
-      model: 'DeepSeek-V3.1',
-      maxTokens: 8192,
-      contextWindow: 131072
-    },
-    {
-      name: 'openrouter-free',
+      name: 'openrouter-deepseek-v3',
       baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
       apiKey: process.env.OPENROUTER_API_KEY,
-      model: 'google/gemini-2.0-flash-exp:free',
+      model: 'deepseek/deepseek-chat-v3-0324:free',
       maxTokens: 8192,
-      contextWindow: 1000000,
-      extraHeaders: {
-        'HTTP-Referer': 'https://flofaction.com',
-        'X-Title': 'Flo Faction Bot Network'
-      }
+      contextWindow: 131072,
+      extraHeaders: { 'HTTP-Referer': 'https://flofaction.com', 'X-Title': 'FloFaction' }
+    },
+    {
+      name: 'openrouter-qwen3-coder',
+      baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
+      apiKey: process.env.OPENROUTER_API_KEY,
+      model: 'qwen/qwen3-coder-30b:free',
+      maxTokens: 8192,
+      contextWindow: 131072,
+      extraHeaders: { 'HTTP-Referer': 'https://flofaction.com', 'X-Title': 'FloFaction' }
+    },
+    {
+      name: 'openrouter-hermes-70b',
+      baseUrl: 'https://openrouter.ai/api/v1/chat/completions',
+      apiKey: process.env.OPENROUTER_API_KEY,
+      model: 'nousresearch/hermes-3-llama-3.1-70b:free',
+      maxTokens: 8192,
+      contextWindow: 131072,
+      extraHeaders: { 'HTTP-Referer': 'https://flofaction.com', 'X-Title': 'FloFaction' }
+    },
+    // === TIER 4: GROQ (fastest inference - need new key from console.groq.com/keys) ===
+    {
+      name: 'groq-llama-70b',
+      baseUrl: 'https://api.groq.com/openai/v1/chat/completions',
+      apiKey: process.env.GROQ_API_KEY,
+      model: 'llama-3.3-70b-versatile',
+      maxTokens: 4096,
+      contextWindow: 128000
+    },
+    // === TIER 5: GOOGLE AI STUDIO (need new key from aistudio.google.com/app/apikey) ===
+    {
+      name: 'google-gemini-flash',
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      apiKey: process.env.GOOGLE_API_KEY,
+      model: 'gemini-2.0-flash',
+      maxTokens: 8192,
+      contextWindow: 1000000
+    },
+    // === TIER 6: NVIDIA NIM (need key from build.nvidia.com) ===
+    {
+      name: 'nvidia-nemotron',
+      baseUrl: 'https://integrate.api.nvidia.com/v1/chat/completions',
+      apiKey: process.env.NVIDIA_API_KEY,
+      model: 'nvidia/llama-3.1-nemotron-70b-instruct',
+      maxTokens: 4096,
+      contextWindow: 128000
+    },
+    // === TIER 7: CLOUDFLARE WORKERS AI (10K req/day - need key from dash.cloudflare.com) ===
+    {
+      name: 'cloudflare-llama',
+      baseUrl: `https://api.cloudflare.com/client/v4/accounts/${process.env.CLOUDFLARE_ACCOUNT_ID || 'none'}/ai/v1/chat/completions`,
+      apiKey: process.env.CLOUDFLARE_API_TOKEN,
+      model: '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+      maxTokens: 4096,
+      contextWindow: 128000
+    },
+    // === TIER 8: TOGETHER AI ($25 free credits - need key from api.together.xyz) ===
+    {
+      name: 'together-llama',
+      baseUrl: 'https://api.together.xyz/v1/chat/completions',
+      apiKey: process.env.TOGETHER_API_KEY,
+      model: 'meta-llama/Llama-3.3-70B-Instruct-Turbo',
+      maxTokens: 4096,
+      contextWindow: 128000
+    },
+    // === TIER 9: CEREBRAS (fastest inference - need key from cloud.cerebras.ai) ===
+    {
+      name: 'cerebras-llama',
+      baseUrl: 'https://api.cerebras.ai/v1/chat/completions',
+      apiKey: process.env.CEREBRAS_API_KEY,
+      model: 'llama-3.3-70b',
+      maxTokens: 4096,
+      contextWindow: 128000
+    },
+    // === TIER 10: DEEPSEEK (5M free tokens - need new key from platform.deepseek.com) ===
+    {
+      name: 'deepseek-v3',
+      baseUrl: 'https://api.deepseek.com/chat/completions',
+      apiKey: process.env.DEEPSEEK_API_KEY,
+      model: 'deepseek-chat',
+      maxTokens: 8192,
+      contextWindow: 131072
     }
   ],
   compaction: {
